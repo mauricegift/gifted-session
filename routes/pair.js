@@ -1,10 +1,14 @@
-const { giftedId, removeFile, generateRandomCode, safeGroupAcceptInvite } = require('../gift');
+const { 
+    giftedId,
+    removeFile,
+    generateRandomCode
+} = require('../gift');
 const { SESSION_PREFIX, GC_JID } = require('../config');
 const zlib = require('zlib');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const router = express.Router();
+let router = express.Router();
 const pino = require("pino");
 const { sendButtons } = require('gifted-btns');
 const {
@@ -36,7 +40,6 @@ router.get('/', async (req, res) => {
     }
 
     async function GIFTED_PAIR_CODE() {
-        let sessionSuccessfullyDelivered = false;
         const { version } = await fetchLatestBaileysVersion();
         console.log(version);
         const { state, saveCreds } = await useMultiFileAuthState(path.join(sessionDir, id));
@@ -75,7 +78,12 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection === "open") {
-                    await safeGroupAcceptInvite(Gifted, GC_JID);
+                    try {
+                        await Gifted.groupAcceptInvite(GC_JID);
+                    } catch (e) {
+                        console.log("Group join error:", e.message);
+                    }
+
                     await delay(50000);
 
                     let sessionData = null;
@@ -107,8 +115,8 @@ router.get('/', async (req, res) => {
                     }
 
                     try {
-                        const compressedData = zlib.gzipSync(sessionData);
-                        const b64data = compressedData.toString('base64');
+                        let compressedData = zlib.gzipSync(sessionData);
+                        let b64data = compressedData.toString('base64');
                         await delay(5000);
 
                         let sessionSent = false;
@@ -155,12 +163,6 @@ router.get('/', async (req, res) => {
                             }
                         }
 
-                        if (!sessionSent) {
-                            await cleanUpSession();
-                            return;
-                        }
-
-                        sessionSuccessfullyDelivered = true;
                         await delay(3000);
                         await Gifted.ws.close();
                     } catch (sessionError) {
@@ -169,7 +171,7 @@ router.get('/', async (req, res) => {
                         await cleanUpSession();
                     }
 
-                } else if (connection === "close" && !sessionSuccessfullyDelivered && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output?.statusCode != 401) {
+                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output?.statusCode != 401) {
                     console.log("Reconnecting...");
                     await delay(5000);
                     GIFTED_PAIR_CODE();
